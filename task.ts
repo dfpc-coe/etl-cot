@@ -28,28 +28,6 @@ function validate<T extends TSchema>(schema: T, input: unknown): Static<T> {
     throw new Error(`Invalid CoT GeoJSON${first ? `: ${first.path}: ${first.message}` : ''}`);
 }
 
-/**
- * Accept either a single node-cot InputFeature or an InputFeatureCollection
- */
-function parseJSON(body: unknown): Static<typeof Feature.InputFeature>[] {
-    if (
-        body && typeof body === 'object'
-        && (body as { type?: unknown }).type === 'FeatureCollection'
-    ) {
-        return validate(Feature.InputFeatureCollection, body).features;
-    }
-
-    return [validate(Feature.InputFeature, body)];
-}
-
-/**
- * Parse a raw CoT XML Event document and convert it to a GeoJSON Feature
- */
-async function parseXML(xml: string): Promise<Static<typeof Feature.InputFeature>> {
-    const cot = CoTParser.from_xml(xml);
-    return await CoTParser.to_geojson(cot);
-}
-
 export default class Task extends ETL {
     static name = 'etl-cot';
     static flow = [DataFlowType.Incoming];
@@ -89,9 +67,21 @@ export default class Task extends ETL {
                 const contentType = String(req.headers['content-type'] || '')
                     .split(';')[0].trim().toLowerCase();
 
-                const features = contentType === 'application/json'
-                    ? parseJSON(req.body)
-                    : [await parseXML(String(req.body))];
+                let features: Static<typeof Feature.InputFeature>[];
+
+                if (contentType === 'application/json') {
+                    if (
+                        req.body && typeof req.body === 'object'
+                        && (req.body as { type?: unknown }).type === 'FeatureCollection'
+                    ) {
+                        features = validate(Feature.InputFeatureCollection, req.body).features;
+                    } else {
+                        features = [validate(Feature.InputFeature, req.body)];
+                    }
+                } else {
+                    const cot = CoTParser.from_xml(String(req.body));
+                    features = [await CoTParser.to_geojson(cot)];
+                }
 
                 if (env.DEBUG) {
                     console.log(JSON.stringify(features, null, 2));

@@ -1,5 +1,5 @@
 {
-    "name": "etl-cot",
+    "name": "@tak-ps/etl-cot",
     "type": "module",
     "private": true,
     "version": "1.0.0",
