@@ -1,70 +1,135 @@
 import type { Static, TSchema } from '@sinclair/typebox';
 import { Type } from '@sinclair/typebox';
+import { Value } from '@sinclair/typebox/value';
 import type { Event } from '@tak-ps/etl';
-import { Feature } from '@tak-ps/node-cot'
+import { CoTParser, Feature } from '@tak-ps/node-cot';
 import ETL, { SchemaType, handler as internal, local, DataFlowType, InvocationType } from '@tak-ps/etl';
+import type Schema from '@openaddresses/batch-schema';
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars --  Fetch with an additional Response.typed(TypeBox Object) definition
-import { fetch } from '@tak-ps/etl';
-
-/**
- * The Input Schema contains the environment object that will be requested via the CloudTAK UI
- * It should be a valid TypeBox object - https://github.com/sinclairzx81/typebox
- */
 const InputSchema = Type.Object({
-    'DEBUG': Type.Boolean({
+    DEBUG: Type.Boolean({
         default: false,
-        description: 'Print results in logs'
+        description: 'Print received CoT features in logs'
     })
 });
 
+const OutputSchema = Type.Object({
+    metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown()))
+});
+
 /**
- * The Output Schema contains the known properties that will be returned on the
- * GeoJSON Feature in the .properties.metdata object
+ * Validate an unknown input against a TypeBox schema, throwing a
+ * descriptive error suitable for a 400 response on failure
  */
-const OutputSchema = Type.Object({})
+function validate<T extends TSchema>(schema: T, input: unknown): Static<T> {
+    if (Value.Check(schema, input)) return input;
+
+    const first = Value.Errors(schema, input).First();
+    throw new Error(`Invalid CoT GeoJSON${first ? `: ${first.path}: ${first.message}` : ''}`);
+}
+
+/**
+ * Accept either a single node-cot InputFeature or an InputFeatureCollection
+ */
+function parseJSON(body: unknown): Static<typeof Feature.InputFeature>[] {
+    if (
+        body && typeof body === 'object'
+        && (body as { type?: unknown }).type === 'FeatureCollection'
+    ) {
+        return validate(Feature.InputFeatureCollection, body).features;
+    }
+
+    return [validate(Feature.InputFeature, body)];
+}
+
+/**
+ * Parse a raw CoT XML Event document and convert it to a GeoJSON Feature
+ */
+async function parseXML(xml: string): Promise<Static<typeof Feature.InputFeature>> {
+    const cot = CoTParser.from_xml(xml);
+    return await CoTParser.to_geojson(cot);
+}
 
 export default class Task extends ETL {
-    static name = 'default'
-    static flow = [ DataFlowType.Incoming ];
-    static invocation = [ InvocationType.Schedule ];
+    static name = 'etl-cot';
+    static flow = [DataFlowType.Incoming];
+    static invocation = [InvocationType.Webhook];
+    static invocationDefaults = {
+        webhook: {
+            enabled: true
+        }
+    };
+
+    static async webhooks(
+        schema: Schema,
+        task: Task
+    ): Promise<void> {
+        const env = await task.env(InputSchema);
+
+        await schema.post('/:webhookid', {
+            name: 'Incoming Webhook',
+            group: 'Default',
+            description: 'Endpoint for receiving CoT events as node-cot GeoJSON (application/json) or raw CoT XML (application/xml, text/xml)',
+            params: Type.Object({
+                webhookid: Type.String({
+                    description: 'Unique identifier for the webhook'
+                })
+            }),
+            body: {
+                'application/json': true,
+                'application/xml': true,
+                'text/xml': true
+            },
+            res: Type.Object({
+                status: Type.Integer(),
+                message: Type.String()
+            })
+        }, async (req, res) => {
+            try {
+                const contentType = String(req.headers['content-type'] || '')
+                    .split(';')[0].trim().toLowerCase();
+
+                const features = contentType === 'application/json'
+                    ? parseJSON(req.body)
+                    : [await parseXML(String(req.body))];
+
+                if (env.DEBUG) {
+                    console.log(JSON.stringify(features, null, 2));
+                }
+
+                await task.submit({
+                    type: 'FeatureCollection',
+                    features
+                });
+
+                return res.json({
+                    status: 200,
+                    message: `Submitted ${features.length} Feature${features.length === 1 ? '' : 's'}`
+                });
+            } catch (err) {
+                console.error(err);
+
+                return res.status(400).json({
+                    status: 400,
+                    message: err instanceof Error ? err.message : String(err)
+                });
+            }
+        });
+    }
 
     async schema(
         type: SchemaType = SchemaType.Input,
         flow: DataFlowType = DataFlowType.Incoming
     ): Promise<TSchema> {
         if (flow === DataFlowType.Incoming) {
-            if (type === SchemaType.Input) {
-                return InputSchema;
-            } else {
-                return OutputSchema;
-            }
-        } else {
-            return Type.Object({});
-        }
-    }
-
-    async control(): Promise<void> {
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- Get the Environment from the Server and ensure it conforms to the schema
-        const env = await this.env(InputSchema);
-
-        const features: Static<typeof Feature.InputFeature>[] = [];
-
-        // Get things here and convert them to GeoJSON Feature Collections
-        // That conform to the node-cot Feature properties spec
-        // https://github.com/dfpc-coe/node-CoT/
-
-        const fc: Static<typeof Feature.InputFeatureCollection> = {
-            type: 'FeatureCollection',
-            features: features
+            return type === SchemaType.Input ? InputSchema : OutputSchema;
         }
 
-        await this.submit(fc);
+        return Type.Object({});
     }
 }
 
 await local(await Task.init(import.meta.url), import.meta.url);
-export async function handler(event: Event = {}) {
-    return await internal(new Task(import.meta.url), event);
+export async function handler(event: Event = {}, context?: object) {
+    return await internal(new Task(import.meta.url), event, context);
 }
-

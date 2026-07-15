@@ -1,9 +1,9 @@
 {
-    "name": "coe-etl-template",
+    "name": "etl-cot",
     "type": "module",
-    "prviate": true,
+    "private": true,
     "version": "1.0.0",
-    "description": "",
+    "description": "Webhook ETL for receiving Cursor-On-Target events as GeoJSON or XML",
     "main": "task.ts",
     "scripts": {
         "lint": "eslint *.ts",
@@ -19,7 +19,10 @@
         "typescript-eslint": "^8.0.0"
     },
     "dependencies": {
+        "@openaddresses/batch-schema": "^10.19.0",
         "@sinclair/typebox": "^0.34.0",
-        "@tak-ps/etl": "^10.0.0"
+        "@tak-ps/etl": "^10.0.0",
+        "@tak-ps/node-cot": "^14.38.0",
+        "express": "^5.0.0"
     }
 }
