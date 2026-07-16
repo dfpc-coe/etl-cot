@@ -93,6 +93,8 @@ export default class Task extends ETL {
                     console.log(JSON.stringify(features, null, 2));
                 }
 
+                const count = features.length;
+
                 await task.submit({
                     type: 'FeatureCollection',
                     features
@@ -100,7 +102,7 @@ export default class Task extends ETL {
 
                 return res.json({
                     status: 200,
-                    message: `Submitted ${features.length} Feature${features.length === 1 ? '' : 's'}`
+                    message: `Submitted ${count} Feature${count === 1 ? '' : 's'}`
                 });
             } catch (err) {
                 console.error(err);
