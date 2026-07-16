@@ -7,6 +7,9 @@ import ETL, { SchemaType, handler as internal, local, DataFlowType, InvocationTy
 import type Schema from '@openaddresses/batch-schema';
 
 const InputSchema = Type.Object({
+    SharedSecret: Type.String({
+        description: 'Shared secret that callers must provide in the Authorization Bearer header'
+    }),
     DEBUG: Type.Boolean({
         default: false,
         description: 'Print received CoT features in logs'
@@ -16,17 +19,6 @@ const InputSchema = Type.Object({
 const OutputSchema = Type.Object({
     metadata: Type.Optional(Type.Record(Type.String(), Type.Unknown()))
 });
-
-/**
- * Validate an unknown input against a TypeBox schema, throwing a
- * descriptive error suitable for a 400 response on failure
- */
-function validate<T extends TSchema>(schema: T, input: unknown): Static<T> {
-    if (Value.Check(schema, input)) return input;
-
-    const first = Value.Errors(schema, input).First();
-    throw new Error(`Invalid CoT GeoJSON${first ? `: ${first.path}: ${first.message}` : ''}`);
-}
 
 export default class Task extends ETL {
     static name = 'etl-cot';
@@ -64,20 +56,34 @@ export default class Task extends ETL {
             })
         }, async (req, res) => {
             try {
+                const [scheme, token] = String(req.headers.authorization || '').split(' ');
+
+                if (scheme !== 'Bearer' || !token || token !== env.SharedSecret) {
+                    return res.status(401).json({
+                        status: 401,
+                        message: 'Unauthorized'
+                    });
+                }
+
                 const contentType = String(req.headers['content-type'] || '')
                     .split(';')[0].trim().toLowerCase();
 
                 let features: Static<typeof Feature.InputFeature>[];
 
                 if (contentType === 'application/json') {
-                    if (
-                        req.body && typeof req.body === 'object'
+                    const schema = req.body && typeof req.body === 'object'
                         && (req.body as { type?: unknown }).type === 'FeatureCollection'
-                    ) {
-                        features = validate(Feature.InputFeatureCollection, req.body).features;
-                    } else {
-                        features = [validate(Feature.InputFeature, req.body)];
+                        ? Feature.InputFeatureCollection
+                        : Feature.InputFeature;
+
+                    if (!Value.Check(schema, req.body)) {
+                        const first = Value.Errors(schema, req.body).First();
+                        throw new Error(`Invalid CoT GeoJSON${first ? `: ${first.path}: ${first.message}` : ''}`);
                     }
+
+                    features = req.body.type === 'FeatureCollection'
+                        ? req.body.features
+                        : [req.body];
                 } else {
                     const cot = CoTParser.from_xml(String(req.body));
                     features = [await CoTParser.to_geojson(cot)];

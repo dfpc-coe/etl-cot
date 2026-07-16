@@ -14,12 +14,16 @@ determined by the request `Content-Type` header:
 
 XML payloads are parsed and converted to GeoJSON via node-cot before submission.
 
+Requests must be authenticated with the shared secret configured in the layer environment (`TOKEN`),
+provided as an `Authorization: Bearer <token>` header.
+
 ### Examples
 
 Submit a GeoJSON Feature:
 
 ```sh
 curl -X POST "${WEBHOOK_URL}" \
+    -H "Authorization: Bearer ${TOKEN}" \
     -H 'Content-Type: application/json' \
     -d '{
         "id": "UNIT-123",
@@ -33,6 +37,7 @@ Submit a CoT XML Event:
 
 ```sh
 curl -X POST "${WEBHOOK_URL}" \
+    -H "Authorization: Bearer ${TOKEN}" \
     -H 'Content-Type: application/xml' \
     -d '<event version="2.0" uid="UNIT-123" type="a-f-G" how="m-g"
         time="2026-07-15T12:00:00.000Z" start="2026-07-15T12:00:00.000Z" stale="2026-07-15T12:05:00.000Z">
