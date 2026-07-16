@@ -10,6 +10,10 @@
 
 ## Version History
 
+### v1.1.1
+
+- :bug: Return proper feature submission length
+
 ### v1.1.0
 
 - :rocket: Add Auth
