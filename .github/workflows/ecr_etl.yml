@@ -26,7 +26,7 @@ jobs:
         uses: dawidd6/action-get-tag@v1
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws-us-gov:iam::${{secrets.AWS_ACCOUNT_ID}}:role/Github-ECR-Builder
           role-session-name: GithubECRBuilder
@@ -46,7 +46,7 @@ jobs:
           done
 
       - name: Configure AWS Credentials (Staging)
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: arn:aws:iam::${{secrets.AWS_STAGING_ACCOUNT_ID}}:role/Github-ECR-Builder
           role-session-name: GithubECRBuilder
