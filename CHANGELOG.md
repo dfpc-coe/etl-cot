@@ -10,6 +10,10 @@
 
 ## Version History
 
+### v1.1.0
+
+- :rocket: Add Auth
+
 ### v1.0.1
 
 - :arrow_up: Update AWS Credentials action to v6
