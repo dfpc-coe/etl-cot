@@ -1,0 +1,26 @@
+{
+    "version": "1.0",
+    "name": "Cursor-on-Target Webhook",
+    "description": "Webhook endpoint that receives Cursor-on-Target events as GeoJSON or XML and posts them to the map.",
+    "compute": {
+        "memory": 512,
+        "timeout": 60
+    },
+    "permissions": [
+        {
+            "resource": "feature:*",
+            "required": true,
+            "description": "Posts received Cursor-on-Target events to the map"
+        }
+    ],
+    "invocations": {
+        "incoming": {
+            "webhook": {
+                "description": "Receives Cursor-on-Target events pushed to the webhook endpoint as GeoJSON or XML.",
+                "default": {
+                    "enabled": true
+                }
+            }
+        }
+    }
+}

@@ -10,6 +10,11 @@
 
 ## Version History
 
+### v1.2.0
+
+- :rocket: Add Capabilities document
+- :arrow_up: Update GH Actions
+
 ### v1.1.1
 
 - :bug: Return proper feature submission length
