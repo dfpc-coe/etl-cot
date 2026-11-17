@@ -54,65 +54,72 @@ export default class Task extends ETL {
                 status: Type.Integer(),
                 message: Type.String()
             })
-        }, async (req, res) => {
-            try {
-                const [scheme, token] = String(req.headers.authorization || '').split(' ');
+        }, (req, res) => {
+            const [scheme, token] = (req.headers.authorization || '').split(' ');
 
-                if (scheme !== 'Bearer' || !token || token !== env.SharedSecret) {
-                    return res.status(401).json({
-                        status: 401,
-                        message: 'Unauthorized'
-                    });
-                }
-
-                const contentType = String(req.headers['content-type'] || '')
-                    .split(';')[0].trim().toLowerCase();
-
-                let features: Static<typeof Feature.InputFeature>[];
-
-                if (contentType === 'application/json') {
-                    const schema = req.body && typeof req.body === 'object'
-                        && (req.body as { type?: unknown }).type === 'FeatureCollection'
-                        ? Feature.InputFeatureCollection
-                        : Feature.InputFeature;
-
-                    if (!Value.Check(schema, req.body)) {
-                        const first = Value.Errors(schema, req.body).First();
-                        throw new Error(`Invalid CoT GeoJSON${first ? `: ${first.path}: ${first.message}` : ''}`);
-                    }
-
-                    features = req.body.type === 'FeatureCollection'
-                        ? req.body.features
-                        : [req.body];
-                } else {
-                    const cot = CoTParser.from_xml(String(req.body));
-                    features = [await CoTParser.to_geojson(cot)];
-                }
-
-                if (env.DEBUG) {
-                    console.log(JSON.stringify(features, null, 2));
-                }
-
-                const count = features.length;
-
-                await task.submit({
-                    type: 'FeatureCollection',
-                    features
+            if (scheme !== 'Bearer' || !token || token !== env.SharedSecret) {
+                res.status(401).json({
+                    status: 401,
+                    message: 'Unauthorized'
                 });
+                return;
+            }
 
-                return res.json({
+            Task.receive(task, req.headers['content-type'] || '', req.body, env.DEBUG)
+                .then((count) => res.json({
                     status: 200,
                     message: `Submitted ${count} Feature${count === 1 ? '' : 's'}`
-                });
-            } catch (err) {
-                console.error(err);
+                }))
+                .catch((err: unknown) => {
+                    console.error(err);
 
-                return res.status(400).json({
-                    status: 400,
-                    message: err instanceof Error ? err.message : String(err)
+                    res.status(400).json({
+                        status: 400,
+                        message: err instanceof Error ? err.message : String(err)
+                    });
                 });
-            }
         });
+    }
+
+    static async receive(
+        task: ETL,
+        header: string,
+        body: unknown,
+        debug: boolean
+    ): Promise<number> {
+        const contentType = header.split(';')[0].trim().toLowerCase();
+
+        let features: Static<typeof Feature.InputFeature>[];
+
+        if (contentType === 'application/json') {
+            const format = typeof body === 'object' && body !== null
+                && 'type' in body && body.type === 'FeatureCollection'
+                ? Feature.InputFeatureCollection
+                : Feature.InputFeature;
+
+            if (!Value.Check(format, body)) {
+                const first = Value.Errors(format, body).First();
+                throw new Error(`Invalid CoT GeoJSON${first ? `: ${first.path}: ${first.message}` : ''}`);
+            }
+
+            features = body.type === 'FeatureCollection'
+                ? body.features
+                : [body];
+        } else {
+            const cot = CoTParser.from_xml(String(body));
+            features = [await CoTParser.to_geojson(cot)];
+        }
+
+        if (debug) {
+            console.log(JSON.stringify(features, null, 2));
+        }
+
+        await task.submit({
+            type: 'FeatureCollection',
+            features
+        });
+
+        return features.length;
     }
 
     async schema(
@@ -128,6 +135,6 @@ export default class Task extends ETL {
 }
 
 await local(await Task.init(import.meta.url), import.meta.url);
-export async function handler(event: Event = {}, context?: object) {
-    return await internal(new Task(import.meta.url), event, context);
+export async function handler(event: Event = {}, context?: object): ReturnType<typeof internal> {
+    return internal(new Task(import.meta.url), event, context);
 }
